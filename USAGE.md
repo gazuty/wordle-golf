@@ -2,81 +2,92 @@
 
 ## Quick Start
 
-### Option 1: Command Line (Fastest)
+Fastest path:
 
 ```bash
-python wordle-golf.py --gazuty 4 --ewan 3 --ab 5 --cl 2
+python3 wordle-golf.py --gazuty 4 --ewan 3 --ab 5 --cl X
 ```
 
-This automatically uses today's date.
+That uses today's date automatically.
 
-### Option 2: Specify Date
+Specify an explicit date:
 
 ```bash
-python wordle-golf.py --date 2026-03-24 \
+python3 wordle-golf.py --date 2026-03-24 \
   --gazuty 4 --ewan 3 --ab 5 --cl 2
 ```
 
-### Option 3: Interactive Mode
+Interactive mode:
 
 ```bash
-python wordle-golf.py
+python3 wordle-golf.py
 ```
 
-Prompts you for each player's score.
+You can also prefill the interactive date prompt:
+
+```bash
+python3 wordle-golf.py --date 2026-03-24
+```
+
+## Accepted Input
+
+- Attempts must be `1` through `7`, or `X`.
+- `X` and `7` both score as a failed hole worth `+3`.
+- CLI score entry must include all four players.
+- Dates must use `YYYY-MM-DD`.
 
 ## Viewing Results
 
-### Current Standings
+Current leaderboard:
 
 ```bash
-python wordle-golf.py --leaderboard
+python3 wordle-golf.py --leaderboard
 ```
 
-Shows cumulative scores for the current 18-hole round.
+Backward-compatible alias:
 
-### Individual Scorecards
+```bash
+python3 wordle-golf.py --show
+```
 
-Daily scorecards are saved in `scorecards/YYYY-MM-DD.txt` and printed to console when entering scores.
+Print a saved scorecard:
 
-## Scoring Reference
+```bash
+python3 wordle-golf.py --scorecard 2026-03-24
+```
 
-| Attempts | Golf Term | Score |
-|----------|-----------|-------|
-| 1 | Ace! | -3 |
-| 2 | Eagle | -2 |
-| 3 | Birdie | -1 |
-| 4 | Par | 0 |
-| 5 | Bogey | +1 |
-| 6 | Double Bogey | +2 |
-| 7+ / X | Failed | +3 |
+Daily scorecards are also written to `scorecards/YYYY-MM-DD.txt`.
 
 ## Tournament Flow
 
-1. **Round starts**: First score entry initializes a new 18-hole round
-2. **Daily play**: Enter scores for 18 consecutive days (or holes)
-3. **Round completes**: After hole 18, winner is declared and standings reset
-4. **New round**: Next score entry starts fresh
+1. The first saved day starts a new 18-hole round.
+2. Each valid day increments the hole count by one.
+3. After hole 18, the script prints final standings and resets `data/current.json`.
+4. Historical hole-by-hole entries remain in `data/scores.json`.
+
+## Safety Checks
+
+- Duplicate dates are rejected to prevent accidental double-entry.
+- Partial CLI score input fails fast instead of switching into interactive mode.
+- Missing scorecards return a clear error message.
+- Invalid JSON in `data/current.json` or `data/scores.json` stops execution with an explicit error.
 
 ## Data Storage
 
-- **`data/scores.json`**: Complete historical record of all rounds
-- **`data/current.json`**: Active round state (cumulative scores)
-- **`scorecards/`**: Daily scorecard text files
+- `data/current.json`: active round start date, holes played, and cumulative scores
+- `data/scores.json`: append-only history of saved hole entries
+- `scorecards/`: generated text scorecards by date
 
-## Tips
+## Testing
 
-- Keep screenshots or records of your actual Wordle results for accurate entry
-- Commentary is randomly selected — you'll get different quips for similar performances
-- All data is stored locally in the repo (git-ignored to avoid bloat)
-- The system assumes you play consecutively — gaps in dates are fine but won't affect hole numbering
+Run the regression suite:
 
-## Future Enhancements
+```bash
+python3 -m unittest discover -s tests -v
+```
 
-When you're ready, we can add:
+## Known Limitations
 
-- **OCR screenshot parsing**: Drop images, auto-extract scores
-- **Web interface**: Visual scorecards and charts
-- **Export formats**: PDF, HTML, or social media graphics
-- **Statistical analysis**: Trends, averages, best/worst performances
-- **Multi-round history**: Track multiple 18-hole tournaments over time
+- Player names are hard-coded in `wordle-golf.py`.
+- History is stored as a flat sequence of hole entries rather than grouped round summaries.
+- There is no import or OCR flow yet; all score entry is manual.

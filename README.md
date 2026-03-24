@@ -1,72 +1,99 @@
 # ⛳ Wordle Golf
 
-Daily Wordle performance tracking with golf scoring and witty commentary.
+[![CI](https://github.com/gazuty/wordle-golf/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/gazuty/wordle-golf/actions/workflows/ci.yml)
 
-## The Game
+Track four daily Wordle results as an 18-hole golf round.
 
-Four players compete in Wordle as if playing 18-hole golf, with each hole being par 4:
+The CLI stores each day as a hole, keeps a running leaderboard, writes a text scorecard, and resets the active round after hole 18.
 
-- **Par (4 attempts)**: Even
-- **Birdie (3 attempts)**: -1
-- **Eagle (2 attempts)**: -2  
-- **Ace (1 attempt)**: -3 *(rare!)*
-- **Bogey (5 attempts)**: +1
-- **Double Bogey (6 attempts)**: +2
-- **X (failed)**: +3
+## Scoring
 
-## Players
+| Attempts | Golf Term | Relative Score |
+|----------|-----------|----------------|
+| 1 | Ace | -3 |
+| 2 | Eagle | -2 |
+| 3 | Birdie | -1 |
+| 4 | Par | 0 |
+| 5 | Bogey | +1 |
+| 6 | Double Bogey | +2 |
+| X or 7 | Failed hole | +3 |
 
-- **Gazuty**
-- **Ewan**
-- **AB**
-- **CL**
+## Requirements
 
-## Usage
+- Python 3
+- No external dependencies
 
-### Daily Score Entry
-
-```bash
-python wordle-golf.py --date 2026-03-24 \
-  --gazuty 4 --ewan 3 --ab 5 --cl 2
-```
-
-Or interactive mode:
-
-```bash
-python wordle-golf.py
-```
-
-### View Scorecards
-
-```bash
-# Today's scorecard
-python wordle-golf.py --show
-
-# Full tournament standings
-python wordle-golf.py --leaderboard
-```
-
-## Project Structure
-
-```
-wordle-golf/
-├── wordle-golf.py       # Main scoring engine
-├── data/
-│   ├── scores.json      # Historical scores
-│   └── current.json     # Current 18-hole round state
-├── scorecards/          # Generated daily scorecards
-└── README.md
-```
-
-## Installation
+## Install
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## Future Features
+## Common Commands
 
-- Screenshot OCR ingestion
-- Web dashboard
-- Twitter/Slack integration for auto-posting
-- Historical analysis and stats
+Record a day's scores:
+
+```bash
+python3 wordle-golf.py --date 2026-03-24 \
+  --gazuty 4 --ewan 3 --ab 5 --cl X
+```
+
+Interactive entry:
+
+```bash
+python3 wordle-golf.py
+```
+
+Show the active leaderboard:
+
+```bash
+python3 wordle-golf.py --leaderboard
+```
+
+`--show` is kept as an alias for `--leaderboard`.
+
+Print a saved scorecard:
+
+```bash
+python3 wordle-golf.py --scorecard 2026-03-24
+```
+
+## Operational Guardrails
+
+- A date can only be entered once. Duplicate entries are rejected instead of silently advancing the round twice.
+- CLI score entry requires all four players. Partial score flags return an error instead of dropping into interactive mode.
+- Interactive entry accepts `X` as well as `7`.
+- Saved scorecards live at `scorecards/YYYY-MM-DD.txt`.
+
+## Testing
+
+```bash
+python3 -m py_compile wordle-golf.py tests/test_wordle_golf.py
+python3 -m unittest discover -s tests -v
+```
+
+CI runs the same checks on pushes to `master` and pull requests.
+
+## Project Structure
+
+```text
+wordle-golf/
+├── wordle-golf.py            # CLI, scoring rules, persistence, scorecard output
+├── README.md
+├── USAGE.md
+├── CONTRIBUTING.md
+├── requirements.txt
+├── .github/workflows/ci.yml   # GitHub Actions health checks
+├── tests/
+│   └── test_wordle_golf.py   # Regression coverage for validation and file output
+├── data/
+│   ├── scores.json           # Historical hole-by-hole entries
+│   └── current.json          # Active round state
+└── scorecards/               # Generated text scorecards
+```
+
+## Notes
+
+- `data/` and `scorecards/` are git-ignored local state.
+- `data/scores.json` stores one entry per day or hole, not one nested object per 18-hole round.
+- Commentary is intentionally random, so scorecard flavor text will vary between runs.
