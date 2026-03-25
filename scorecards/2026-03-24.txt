@@ -1,0 +1,11 @@
+🏌️ WORDLE GOLF - Hole 1/18
+📅 2026-03-24
+
+Player     | Attempts | Score           | Total
+-------------------------------------------------
+Gazuty     |    5     | +1 (Bogey)      |  +1
+Ewan       |    4     | 0 (Par)         |   E
+AB         |    4     | 0 (Par)         |   E
+CL         |    5     | +1 (Bogey)      |  +1
+
+💬 📊 Competitive round. Anyone's game!

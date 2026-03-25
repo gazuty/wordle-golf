@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 .DS_Store
 data/
-scorecards/
 scorecard-*.png
 scorecard-image.html
