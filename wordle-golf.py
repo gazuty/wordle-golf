@@ -261,7 +261,7 @@ def generate_scorecard(
     """Generate daily scorecard with witty commentary."""
     hole = current["holes_played"]
     lines = [
-        f"🏌️ WORDLE GOLF - Hole {hole}/18",
+        f"🏌️ THE DEGEN MASTERS - Hole {hole}/18",
         f"📅 {date}",
         "",
         f"{'Player':<10} | Attempts | Score           | Total",
