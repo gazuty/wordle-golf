@@ -4,7 +4,7 @@
 
 Track four daily Wordle results as an 18-hole golf round.
 
-The CLI stores each day as a hole, keeps a running leaderboard, writes a text scorecard, and resets the active round after hole 18.
+The CLI stores each day as a hole, keeps a running leaderboard, writes both a text and PNG scorecard, persists the history in SQLite, and resets the active round after hole 18.
 
 ## Scoring
 
@@ -21,7 +21,7 @@ The CLI stores each day as a hole, keeps a running leaderboard, writes a text sc
 ## Requirements
 
 - Python 3
-- No external dependencies
+- Pillow for PNG rendering
 
 ## Install
 
@@ -63,7 +63,22 @@ python3 wordle-golf.py --scorecard 2026-03-24
 - A date can only be entered once. Duplicate entries are rejected instead of silently advancing the round twice.
 - CLI score entry requires all four players. Partial score flags return an error instead of dropping into interactive mode.
 - Interactive entry accepts `X` as well as `7`.
-- Saved scorecards live at `scorecards/YYYY-MM-DD.txt`.
+- Saved scorecards live at `scorecards/YYYY-MM-DD.txt` and `scorecards/YYYY-MM-DD.png`.
+- `data/scores.db` stores daily hole entries and player totals for image generation and historical lookup.
+
+## Versioned Data
+
+`data/` and `scorecards/` are intentionally committed to the repository.
+
+Why:
+- the repo is small, so keeping the score history in Git is practical
+- daily text and PNG scorecards are part of the product, not disposable build output
+- the SQLite database gives the renderer and future reporting code a queryable history without needing external infrastructure
+
+Warning:
+- every normal scoring run changes tracked files in `data/` and `scorecards/`
+- do not run sample commands against the main repo unless you want those artifacts in Git history
+- review generated `.txt`, `.png`, `.json`, and `.db` changes before committing or pushing
 
 ## Testing
 
@@ -88,12 +103,14 @@ wordle-golf/
 │   └── test_wordle_golf.py   # Regression coverage for validation and file output
 ├── data/
 │   ├── scores.json           # Historical hole-by-hole entries
+│   ├── scores.db             # SQLite score history used for recent-hole lookups
 │   └── current.json          # Active round state
-└── scorecards/               # Generated text scorecards
+└── scorecards/               # Generated text and PNG scorecards
 ```
 
 ## Notes
 
-- `data/` and `scorecards/` are git-ignored local state.
-- `data/scores.json` stores one entry per day or hole, not one nested object per 18-hole round.
+- `data/` and `scorecards/` are intentionally committed so the historical record lives with the repo.
+- `data/scores.json` is still written for simple inspection and backward compatibility.
+- `data/scores.db` is the authoritative queryable store for recent-hole and image rendering data.
 - Commentary is intentionally random, so scorecard flavor text will vary between runs.

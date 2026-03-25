@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -32,6 +33,7 @@ class WordleGolfTests(unittest.TestCase):
         self.module.SCORECARDS_DIR = root / "scorecards"
         self.module.SCORES_FILE = self.module.DATA_DIR / "scores.json"
         self.module.CURRENT_FILE = self.module.DATA_DIR / "current.json"
+        self.module.DB_FILE = self.module.DATA_DIR / "scores.db"
 
     def test_parse_attempt_value_accepts_x_and_rejects_invalid_values(self):
         self.assertEqual(self.module.parse_attempt_value("X"), 7)
@@ -73,6 +75,22 @@ class WordleGolfTests(unittest.TestCase):
         scorecard = self.module.scorecard_path_for("2026-03-24").read_text(encoding="utf-8")
         self.assertEqual(scorecard, card)
         self.assertIn("💬", stdout.getvalue())
+        self.assertTrue(self.module.scorecard_image_path_for("2026-03-24").exists())
+
+        with contextlib.closing(sqlite3.connect(self.module.DB_FILE)) as connection:
+            hole = connection.execute(
+                "SELECT date, hole_number, round_start_date, commentary FROM holes"
+            ).fetchone()
+            self.assertEqual(hole[0], "2026-03-24")
+            self.assertEqual(hole[1], 1)
+            self.assertEqual(hole[2], "2026-03-24")
+            self.assertIn("💬", hole[3])
+
+            player_rows = connection.execute(
+                "SELECT player, attempts, daily_score, total_score FROM player_scores ORDER BY player"
+            ).fetchall()
+            self.assertEqual(len(player_rows), 4)
+            self.assertEqual(player_rows[1], ("CL", 7, 3, 3))
 
     def test_duplicate_date_is_rejected(self):
         scores = {
@@ -118,6 +136,22 @@ class WordleGolfTests(unittest.TestCase):
 
         self.assertIn("Hole 1/18", stdout.getvalue())
         self.assertIn("Gazuty", stdout.getvalue())
+
+    def test_recent_holes_are_loaded_in_order(self):
+        days = [
+            ("2026-03-24", {"Gazuty": 4, "Ewan": 3, "AB": 5, "CL": 7}),
+            ("2026-03-25", {"Gazuty": 3, "Ewan": 4, "AB": 4, "CL": 5}),
+            ("2026-03-26", {"Gazuty": 2, "Ewan": 4, "AB": 6, "CL": 4}),
+        ]
+
+        for date, scores in days:
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.module.add_daily_score(date, scores)
+
+        recent = self.module.load_recent_holes(limit=2)
+        self.assertEqual([entry["date"] for entry in recent], ["2026-03-25", "2026-03-26"])
+        self.assertEqual(recent[-1]["scores"]["Gazuty"]["attempts"], 2)
+        self.assertEqual(recent[-1]["scores"]["AB"]["daily_score"], 2)
 
     def test_main_rejects_partial_score_arguments(self):
         argv = ["wordle-golf.py", "--gazuty", "4"]

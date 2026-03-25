@@ -56,14 +56,14 @@ Print a saved scorecard:
 python3 wordle-golf.py --scorecard 2026-03-24
 ```
 
-Daily scorecards are also written to `scorecards/YYYY-MM-DD.txt`.
+Daily scorecards are also written to `scorecards/YYYY-MM-DD.txt` and `scorecards/YYYY-MM-DD.png`.
 
 ## Tournament Flow
 
 1. The first saved day starts a new 18-hole round.
 2. Each valid day increments the hole count by one.
 3. After hole 18, the script prints final standings and resets `data/current.json`.
-4. Historical hole-by-hole entries remain in `data/scores.json`.
+4. Historical hole-by-hole entries remain in `data/scores.json` and `data/scores.db`.
 
 ## Safety Checks
 
@@ -75,8 +75,11 @@ Daily scorecards are also written to `scorecards/YYYY-MM-DD.txt`.
 ## Data Storage
 
 - `data/current.json`: active round start date, holes played, and cumulative scores
-- `data/scores.json`: append-only history of saved hole entries
-- `scorecards/`: generated text scorecards by date
+- `data/scores.json`: append-only JSON history of saved hole entries
+- `data/scores.db`: SQLite history used for recent-hole panels and queryable reporting
+- `scorecards/`: generated text and PNG scorecards by date
+
+These files are intentionally committed to Git. A normal scoring run changes tracked repository state, so avoid using fake dates or test scores in the main checkout unless you intend to commit them.
 
 ## Testing
 

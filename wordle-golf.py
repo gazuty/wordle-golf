@@ -6,11 +6,15 @@ Daily Wordle performance tracked as an 18-hole golf round.
 """
 
 import argparse
+from contextlib import closing
 import json
 import random
+import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Mapping, Optional
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+
+from PIL import Image, ImageDraw, ImageFont
 
 # Players
 PLAYERS = ("Gazuty", "Ewan", "AB", "CL")
@@ -31,12 +35,48 @@ DATA_DIR = Path(__file__).parent / "data"
 SCORECARDS_DIR = Path(__file__).parent / "scorecards"
 SCORES_FILE = DATA_DIR / "scores.json"
 CURRENT_FILE = DATA_DIR / "current.json"
+DB_FILE = DATA_DIR / "scores.db"
+
+IMAGE_WIDTH = 1600
+IMAGE_HEIGHT = 900
+RECENT_HOLES_TO_SHOW = 4
 
 
 def ensure_storage_dirs() -> None:
     """Create storage directories on demand."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     SCORECARDS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def get_connection() -> sqlite3.Connection:
+    """Open the local score database, creating schema on first use."""
+    ensure_storage_dirs()
+    connection = sqlite3.connect(DB_FILE)
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS holes (
+            date TEXT PRIMARY KEY,
+            hole_number INTEGER NOT NULL,
+            round_start_date TEXT NOT NULL,
+            commentary TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS player_scores (
+            date TEXT NOT NULL,
+            player TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            daily_score INTEGER NOT NULL,
+            total_score INTEGER NOT NULL,
+            PRIMARY KEY (date, player),
+            FOREIGN KEY (date) REFERENCES holes(date) ON DELETE CASCADE
+        )
+        """
+    )
+    return connection
 
 
 def default_round_state() -> Dict[str, object]:
@@ -150,6 +190,11 @@ def save_current_round(data: Mapping[str, object]) -> None:
         json.dump(data, handle, indent=2)
 
 
+def scorecard_image_path_for(date: str) -> Path:
+    """Return the path for a PNG scorecard."""
+    return SCORECARDS_DIR / f"{date}.png"
+
+
 def calculate_score(attempts: int) -> int:
     """Convert Wordle attempts to golf score."""
     return SCORING.get(attempts, 3)
@@ -204,6 +249,77 @@ def scorecard_path_for(date: str) -> Path:
     return SCORECARDS_DIR / f"{date}.txt"
 
 
+def save_score_to_database(
+    date: str,
+    hole_number: int,
+    round_start_date: str,
+    attempts: Mapping[str, int],
+    golf_scores: Mapping[str, int],
+    totals: Mapping[str, int],
+    commentary: str,
+) -> None:
+    """Persist one daily score entry to SQLite."""
+    with closing(get_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO holes (date, hole_number, round_start_date, commentary)
+            VALUES (?, ?, ?, ?)
+            """,
+            (date, hole_number, round_start_date, commentary),
+        )
+        connection.executemany(
+            """
+            INSERT INTO player_scores (date, player, attempts, daily_score, total_score)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                (date, player, attempts[player], golf_scores[player], totals[player])
+                for player in PLAYERS
+            ],
+        )
+        connection.commit()
+
+
+def load_recent_holes(limit: int = RECENT_HOLES_TO_SHOW) -> List[Dict[str, object]]:
+    """Return the most recent holes for leaderboard context."""
+    with closing(get_connection()) as connection:
+        hole_rows = connection.execute(
+            """
+            SELECT date, hole_number
+            FROM holes
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+        recent_holes = []
+        for hole_row in hole_rows:
+            score_rows = connection.execute(
+                """
+                SELECT player, attempts, daily_score
+                FROM player_scores
+                WHERE date = ?
+                ORDER BY player
+                """,
+                (hole_row["date"],),
+            ).fetchall()
+            recent_holes.append({
+                "date": hole_row["date"],
+                "hole": hole_row["hole_number"],
+                "scores": {
+                    row["player"]: {
+                        "attempts": row["attempts"],
+                        "daily_score": row["daily_score"],
+                    }
+                    for row in score_rows
+                },
+            })
+
+    recent_holes.reverse()
+    return recent_holes
+
+
 def add_daily_score(date: str, scores: Mapping[str, object]) -> str:
     """
     Add a day's Wordle results.
@@ -244,7 +360,32 @@ def add_daily_score(date: str, scores: Mapping[str, object]) -> str:
     save_scores(data)
     save_current_round(current)
 
-    card = generate_scorecard(normalized_date, normalized_scores, golf_scores, current)
+    commentary = generate_commentary(golf_scores)
+    save_score_to_database(
+        normalized_date,
+        int(current["holes_played"]),
+        str(current["start_date"]),
+        normalized_scores,
+        golf_scores,
+        current["scores"],
+        commentary,
+    )
+
+    card = generate_scorecard(
+        normalized_date,
+        normalized_scores,
+        golf_scores,
+        current,
+        commentary,
+    )
+    render_scorecard_png(
+        normalized_date,
+        normalized_scores,
+        golf_scores,
+        current,
+        commentary,
+        load_recent_holes(),
+    )
 
     if current["holes_played"] == 18:
         finalize_round(current)
@@ -257,6 +398,7 @@ def generate_scorecard(
     attempts: Mapping[str, int],
     golf_scores: Mapping[str, int],
     current: Mapping[str, object],
+    commentary: str,
 ) -> str:
     """Generate daily scorecard with witty commentary."""
     hole = current["holes_played"]
@@ -280,7 +422,7 @@ def generate_scorecard(
             f"{format_relative_score(total):>3}"
         )
 
-    lines.extend(["", generate_commentary(golf_scores)])
+    lines.extend(["", commentary])
     card = "\n".join(lines) + "\n"
 
     ensure_storage_dirs()
@@ -289,6 +431,185 @@ def generate_scorecard(
 
     print(card, end="")
     return card
+
+
+def find_font(candidates: Sequence[str], size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    """Load the first available font from a short candidate list."""
+    for candidate in candidates:
+        try:
+            return ImageFont.truetype(candidate, size=size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
+def get_fonts() -> Dict[str, ImageFont.ImageFont]:
+    """Return a consistent font set for rendering scorecards."""
+    sans_regular = [
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/SFNS.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    sans_bold = [
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/SFNSRounded.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    emoji = [
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+        "/System/Library/Fonts/Apple Color Emoji.ttc",
+    ]
+    return {
+        "title": find_font(sans_bold, 52),
+        "subtitle": find_font(sans_regular, 26),
+        "header": find_font(sans_bold, 24),
+        "body": find_font(sans_regular, 24),
+        "small": find_font(sans_regular, 18),
+        "emoji": find_font(emoji + sans_regular, 54),
+    }
+
+
+def fit_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.ImageFont,
+    anchor: Tuple[int, int],
+    fill: str,
+) -> None:
+    """Draw text with a single fallback path for color emoji capable fonts."""
+    try:
+        draw.text(anchor, text, font=font, fill=fill, embedded_color=True)
+    except TypeError:
+        draw.text(anchor, text, font=font, fill=fill)
+
+
+def draw_green_icon(draw: ImageDraw.ImageDraw, origin: Tuple[int, int], fonts: Mapping[str, ImageFont.ImageFont]) -> None:
+    """Draw a small putting-green mark for the image header."""
+    x, y = origin
+    draw.ellipse((x, y + 40, x + 160, y + 120), fill="#3FAE49", outline="#146C2E", width=4)
+    draw.ellipse((x + 45, y + 58, x + 115, y + 93), fill="#8ADE78", outline="#2F8C3E", width=2)
+    draw.line((x + 92, y + 6, x + 92, y + 78), fill="#FFF4CC", width=5)
+    draw.polygon([(x + 92, y + 8), (x + 145, y + 28), (x + 92, y + 48)], fill="#F44336")
+    fit_text(draw, "⛳", fonts["emoji"], (x + 10, y - 4), "#FFFFFF")
+
+
+def score_to_color(score: int) -> str:
+    """Return a color keyed to golf scoring."""
+    if score <= -2:
+        return "#0E9F6E"
+    if score == -1:
+        return "#2A7E4F"
+    if score == 0:
+        return "#D5C8A7"
+    if score == 1:
+        return "#D98841"
+    return "#C0392B"
+
+
+def draw_round_table(
+    draw: ImageDraw.ImageDraw,
+    fonts: Mapping[str, ImageFont.ImageFont],
+    attempts: Mapping[str, int],
+    golf_scores: Mapping[str, int],
+    current: Mapping[str, object],
+) -> None:
+    """Draw the main leaderboard block."""
+    table_left = 90
+    table_top = 220
+    row_height = 90
+    col_x = [table_left, 440, 700, 1050, 1320]
+
+    draw.rounded_rectangle((70, 190, 1530, 610), radius=24, fill="#103B25", outline="#D6B25E", width=3)
+    headers = ["Player", "Attempts", "Today", "Golf", "Total"]
+    for index, header in enumerate(headers):
+        draw.text((col_x[index], table_top), header, font=fonts["header"], fill="#F7E7B4")
+
+    draw.line((90, table_top + 42, 1490, table_top + 42), fill="#D6B25E", width=2)
+
+    for row, player in enumerate(PLAYERS):
+        y = table_top + 70 + row * row_height
+        attempt_value = attempts[player]
+        daily_score = golf_scores[player]
+        total_score = int(current["scores"][player])
+        cell_color = score_to_color(daily_score)
+
+        draw.text((col_x[0], y), player, font=fonts["body"], fill="#FFFFFF")
+        draw.text((col_x[1], y), str(attempt_value), font=fonts["body"], fill="#FFFFFF")
+        draw.text((col_x[2], y), score_name(attempt_value), font=fonts["body"], fill=cell_color)
+        draw.text((col_x[3], y), format_relative_score(daily_score, "0"), font=fonts["body"], fill=cell_color)
+        draw.text((col_x[4], y), format_relative_score(total_score), font=fonts["body"], fill="#FFFFFF")
+
+        if row < len(PLAYERS) - 1:
+            draw.line((90, y + 52, 1490, y + 52), fill="#27563D", width=1)
+
+
+def draw_recent_holes_panel(
+    draw: ImageDraw.ImageDraw,
+    fonts: Mapping[str, ImageFont.ImageFont],
+    recent_holes: Sequence[Mapping[str, object]],
+) -> None:
+    """Draw a compact panel with recent hole scoring."""
+    panel = (70, 650, 1530, 840)
+    draw.rounded_rectangle(panel, radius=24, fill="#F4EBD5", outline="#D6B25E", width=3)
+    draw.text((95, 675), "Recent Holes", font=fonts["header"], fill="#103B25")
+
+    if not recent_holes:
+        draw.text((95, 725), "No history recorded yet.", font=fonts["body"], fill="#103B25")
+        return
+
+    start_x = 340
+    col_width = 270
+    for index, hole in enumerate(recent_holes):
+        x = start_x + index * col_width
+        label = f"H{hole['hole']}  {hole['date']}"
+        draw.text((x, 680), label, font=fonts["small"], fill="#6B5A32")
+
+        for row, player in enumerate(PLAYERS):
+            player_data = hole["scores"][player]
+            daily_score = int(player_data["daily_score"])
+            y = 720 + row * 28
+            draw.text((x, y), player, font=fonts["small"], fill="#103B25")
+            summary = f"{player_data['attempts']} / {format_relative_score(daily_score, '0')}"
+            draw.text((x + 120, y), summary, font=fonts["small"], fill=score_to_color(daily_score))
+
+
+def render_scorecard_png(
+    date: str,
+    attempts: Mapping[str, int],
+    golf_scores: Mapping[str, int],
+    current: Mapping[str, object],
+    commentary: str,
+    recent_holes: Sequence[Mapping[str, object]],
+) -> Path:
+    """Render a social-shareable PNG scorecard."""
+    ensure_storage_dirs()
+    fonts = get_fonts()
+    image = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT), "#0B281A")
+    draw = ImageDraw.Draw(image)
+
+    draw.rectangle((0, 0, IMAGE_WIDTH, IMAGE_HEIGHT), fill="#0B281A")
+    draw.rounded_rectangle((25, 25, IMAGE_WIDTH - 25, IMAGE_HEIGHT - 25), radius=36, outline="#D6B25E", width=4)
+    draw.ellipse((-220, -260, 520, 280), fill="#17472F")
+    draw.ellipse((1120, 640, 1820, 1160), fill="#17472F")
+    draw.rectangle((0, 150, IMAGE_WIDTH, 190), fill="#0F3321")
+
+    draw_green_icon(draw, (110, 40), fonts)
+    draw.text((300, 55), "The Degen Masters", font=fonts["title"], fill="#F7E7B4")
+    draw.text(
+        (304, 120),
+        f"Hole {current['holes_played']}/18  |  {date}  |  Leaderboard to Par",
+        font=fonts["subtitle"],
+        fill="#E9DFC5",
+    )
+    draw.text((90, 160), commentary, font=fonts["body"], fill="#F7E7B4")
+
+    draw_round_table(draw, fonts, attempts, golf_scores, current)
+    draw_recent_holes_panel(draw, fonts, recent_holes)
+
+    path = scorecard_image_path_for(date)
+    image.save(path, format="PNG")
+    return path
 
 
 def generate_commentary(scores: Mapping[str, int]) -> str:
