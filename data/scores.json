@@ -15,6 +15,38 @@
         "AB": 1,
         "CL": 1
       }
+    },
+    {
+      "date": "2026-03-26",
+      "hole": 2,
+      "attempts": {
+        "Gazuty": 5,
+        "Ewan": 4,
+        "AB": 5,
+        "CL": 6
+      },
+      "scores": {
+        "Gazuty": 1,
+        "Ewan": 0,
+        "AB": 1,
+        "CL": 2
+      }
+    },
+    {
+      "date": "2026-03-27",
+      "hole": 3,
+      "attempts": {
+        "Gazuty": 5,
+        "Ewan": 4,
+        "AB": 5,
+        "CL": 5
+      },
+      "scores": {
+        "Gazuty": 1,
+        "Ewan": 0,
+        "AB": 1,
+        "CL": 1
+      }
     }
   ]
 }
