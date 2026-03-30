@@ -1,10 +1,10 @@
 {
   "start_date": "2026-03-25",
-  "holes_played": 4,
+  "holes_played": 6,
   "scores": {
-    "Gazuty": 2,
-    "Ewan": 2,
-    "AB": 3,
-    "CL": 4
+    "Gazuty": 0,
+    "Ewan": 1,
+    "AB": 4,
+    "CL": 3
   }
 }
