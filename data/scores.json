@@ -239,6 +239,22 @@
         "AB": 1,
         "CL": -1
       }
+    },
+    {
+      "date": "2026-04-09",
+      "hole": 16,
+      "attempts": {
+        "Gazuty": 4,
+        "Ewan": 5,
+        "AB": 3,
+        "CL": 3
+      },
+      "scores": {
+        "Gazuty": 0,
+        "Ewan": 1,
+        "AB": -1,
+        "CL": -1
+      }
     }
   ]
 }
